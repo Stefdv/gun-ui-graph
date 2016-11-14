@@ -1,0 +1,702 @@
+<link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../paper-toolbar/paper-toolbar.html">
+
+<script src="../cytoscape/dist/cytoscape.min.js"></script>
+<script src="extensions/dagre.min.js"></script>
+<script src="extensions/cytoscape-dagre.js"></script>
+<script src="extensions/cytoscape-cose-bilkent.js"></script>
+<script src="extensions/cytoscape-snap-to-grid.js"></script>
+<!--
+`gun-ui-graph`
+
+
+@demo demo/index.html 
+-->
+
+<dom-module id="gun-ui-graph">
+  <template>
+    <style>
+      :host {
+        display: block;
+        z-index: 0;
+      }
+      #cy {
+        width: 100%;
+        height: 100%;
+        left: 0;
+        top: 0;
+        z-index: 999;
+      }
+      .toolbar{
+        border:1px solid;
+      }
+    </style>
+
+
+    <div id="cy"></div>
+  </template>
+
+  <script>
+
+
+    Polymer({
+
+      is: 'gun-ui-graph',
+
+      properties: {
+        cy:{type:Object,value:function(){
+          return {}
+        }},
+        /**
+         * layout name to use internal layout
+         * if you want to provide your own layout
+         * use 'layout' instead.
+         * @type {String}
+         */
+        useLayout: { type: String, value: 'dagre' },
+        /**
+         * Provide a layout ( see http://js.cytoscape.org/#layouts)
+         * @type {Object} 
+         */
+        layout: {type: Object,value:function() {
+          return {}
+        }},
+        /**
+         * style for cy 
+         * @type {Array(Json)}
+         */
+        cystyle:{ type: Array,value:function(){ return [] }},
+
+        /**
+         * initial zoom
+         * 'fit' will overrule this
+         * @type {Number}
+         */
+        zoom:{type:Number, value:1},
+        /**
+         * Initial pan
+         * 'fit' will overrule this
+         * @type {Object} {x:0,y:0}
+         */
+        pan:{type: Object,value:function(){
+          return {x:0,y:0}
+        }},
+        /**
+         * Set min allowed zoom level
+         * @type {Number}
+         */
+        minZoom: {type:Number, value:0.1},
+        /**
+         * Set max allowed zoom level
+         * @type {Number}
+         */
+        maxZoom: {type:Number, value:50},
+        /**
+         * Whether zooming the graph is enabled, 
+         * both by user events and programmatically.
+         * @type {Boolean}
+         */
+        zoomingEnabled:{type:Boolean,value:false},
+        /**
+         * Whether user events (e.g. mouse wheel, pinch-to-zoom) 
+         * are allowed to zoom the graph. Programmatic changes to 
+         * zoom are unaffected by this option.
+         * @type {Boolean}
+         */
+        userZoomingEnabled: {type:Boolean,value:false},
+        /**
+         * Whether panning the graph is enabled, 
+         * both by user events and programmatically.
+         * @type {Boolean}
+         */
+        panningEnabled:{type:Boolean,value:false},
+        /**
+         * Whether user events (e.g. dragging the graph background) 
+         * are allowed to pan the graph. Programmatic changes to pan 
+         * are unaffected by this option.
+         * @type {Boolean}
+         */
+        userPanningEnabled: {type:Boolean,value:false},
+        /**
+         * Whether box selection (i.e. drag a box overlay around, 
+         * and release it to select) is enabled. If enabled, the 
+         * user must taphold to pan the graph.
+         * @type {Boolean}
+         */
+        boxSelectionEnabled:{type:Boolean,value:false},
+        /**
+         * 'additive', selection adds to the set of currently selected elements. 
+         * 'single', previous elements are unselected
+         * @type {String}
+         */
+        selectionType: {type:String, value:'single'},
+
+        _touchTapThreshold: {type:Number, value:8},
+        _desktopTapThreshold:{type:Number, value:4},
+       /**
+        * Whether nodes should be ungrabified (not grabbable by user) 
+        * by default (if true, overrides individual node state).
+        * @type {Boolean}
+        */
+        autoungrabify: {type:Boolean,value:false},
+
+        /**
+         * Whether nodes should be locked (not draggable at all) 
+         * by default (if true, overrides individual node state).
+         * @type {Boolean}
+         */
+        autolock: {type:Boolean,value:false},
+        /**
+         * Whether nodes should be unselectified (immutable selection state)
+         * by default (if true, overrides individual element state).
+         * @type {Boolean}
+         */
+        autounselectify: {type:Boolean,value:true},
+        
+        zoomStep: {type: Number,value:0.2},
+         // rendering options:
+        /**
+         * A convenience option that initialises the instance to run 
+         * headlessly. You do not need to set this in environments that 
+         * are implicitly headless (e.g. Node.js). However, it is handy 
+         * to set headless: true if you want a headless instance in a browser.
+         * @type {Boolean}
+         */
+        _headless: {type:Boolean,value:false},
+        /**
+         * whether styling should be used. For headless (i.e. outside the browser)
+         * environments, display is not necessary and so neither is styling — thereby 
+         * speeding up your code. You can manually enable styling in headless 
+         * environments if you require it for a special case. Note that it does not make 
+         * sense to disable style if you plan on rendering the graph.
+         * @type {Boolean}
+         */
+        _styleEnabled: {type:Boolean,value:true},
+        _hideEdgesOnViewport: {type:Boolean,value:false},
+        _textureOnViewport: {type:Boolean,value:false},
+        _motionBlur: {type:Boolean,value:false},
+        _motionBlurOpacity:{type: Number,value:0.2},
+
+        /**
+         * Overrides the screen pixel ratio with a manually set value (1.0 recommended,
+         * if set). This can be used to increase performance on high density displays by 
+         * reducing the effective area that needs to be rendered, though this is much 
+         * less necessary on more recent browser releases. If you want to use the 
+         * hardware’s actual pixel ratio, you can set pixelRatio: 'auto' (default).
+         * @type {String}
+         */
+        pixelRatio:  {type:String, value:'auto'},
+       
+
+        /**
+         * when set the nodes will snap-to-grid.
+         * Set the grid cell size
+         * @type {Number}
+         */
+        snap:{type:Number,value:false},
+        /**
+         * If you don't want gun-ui-graph to create nodes and edges from 
+         * a gun database ( meaning, you don't provide 'gun' and 'gunroot')
+         * You can set init to start the graph.
+         * NOTE: you will have to provide nodes and edges yourself
+         * @type {Boolean}
+         */
+        init:{type: Boolean,value:false,observer:'_initUserCy'},
+        /**
+         * See discription for 'init'
+         * @type {Array}
+         */
+        nodes: { type: Array,value: function(){ return [] }},
+        /**
+         * See discription for 'init'
+         * @type {Array}
+         */
+        edges: { type: Array,value: function(){ return [] }},
+
+        // layout
+        /**
+         * Whether the graph should fit the viewport initialy
+         * @type { Boolean}
+         */
+        fit:{type: Boolean,value:false},
+
+        randomize: {type: Boolean,value:false},
+        _initialized:{type: Boolean,value:false},
+        /**
+         * ATM gun has no option to subscribe to the whole database therefore
+         * it is required that you add all nodes ( that you want to see in the graph)
+         * to a 'root' node. ( eg. gun.get('ROOT').set(myNode))
+         * @type {String}
+         */
+        gunroot:{type:String,value:false,observer:'_gunRootChanged'},
+        /**
+         * gun-ui-graph works with your gun instance so you have to provide
+         * your gun object. (eg: var yourGun = Gun(options) then provide {{yourGun}} )
+         * @type {Object}
+         */
+        gun:{type:Object,value:function(){return {}}},
+
+
+      /**
+       * provide the fields you want to show in the label
+       * each field will be on a new line
+       */
+        useAsLabel:{type:String},
+      /**
+       * provide the field that holds a reference 
+       * to the node you want to use as compoundNode
+       */
+        useAsCompound:{type:String,value:false},
+        /**
+         * When layout = 'preset' you can provide an object with all positions
+         * eg: var positions = {n0:{x:100,y200},n1:{x:400,y:400},...}
+         * @type {Object}
+         */
+        positions: {type:Object,value:false},
+        /**
+         * Provide a comma seperated string for each field you want to be able
+         * to use as a css selector.
+         * @type {String} ( comma seperated eg: "name,type,length")
+         */
+        cssLabels:{type:String,value:false},
+        /**
+         * When set , clicking on a node will animate the selected node into view
+         * @type {Boolean}
+         */
+        zoomTap: {type: Boolean,value:false},
+        /**
+         * enable/disable node dragging
+         * @type {Boolean}
+         */
+        lock:{type: Boolean,value:false,observer:'_lockChanged'},
+        /**
+         * Returns the selected node(s)
+         * @return {Object} [description]
+         */
+        selected:{type:Object,value:function(){return{}},notify:true},
+        //data: { type: String,value:false},
+      },// end properties
+      observers: [
+        '_gunChanged(gun)'
+      ],
+
+      ready: function() {
+      },
+      attached: function() {
+      },
+      _gunRootChanged:function(gunroot) {
+          if(gunroot && this.gun instanceof Gun) this._startGun()
+      },
+      _gunChanged: function(gunContext) {
+        if(Gun) { 
+          Gun.chain.valMapEnd = function (cb, end) {
+            var n = function () {},
+              count = 0,
+              props = [],
+              gunChain = this;
+              cb = cb || n;
+              end = end || n;
+
+          gunChain.val(function (list) {
+            var args = Array.prototype.slice.call(arguments);
+            Gun.node.is(list, function (n, prop) {
+              count += 1;
+              props.push(prop);
+            });
+            props.forEach(function (prop) {
+              gunChain.path(prop).val(function (val, key) {
+                count -= 1;
+                cb.apply(this, arguments);
+                if (!count) {
+                  end.apply(this, args);
+                }
+              });
+            });
+          });
+          return gunChain;
+        };
+        if(this.gunroot && gunContext instanceof Gun) this._startGun()
+      } else {
+        console.warn('No Gun')
+      }
+          
+      },
+     _lockChanged: function(state) {
+      if(this.cy._private) {
+       state ? this.cy.nodes().ungrabify() : this.cy.nodes().grabify()
+      }
+      
+     },
+      _startGun: function(){
+        console.log('_startGun');
+          if(this.gunroot && this.gun instanceof Gun) {
+            // first build gun._.graph
+            console.log('build gun._.graph')
+            var self = this
+           function each(node) {
+            console.log(node)
+            //self._processGunNode(node)
+           }
+           function ended(collection) {
+                console.log('Done mapping over:', collection);
+            //self._initCy()
+             
+      
+             self._mapNodes()
+            }
+           this.gun.get(this.gunroot).valMapEnd(each,ended)
+          //this.gun.get(this.gunroot).map(each)
+          //this._mapNodes()
+
+          } 
+      },
+      _mapNodes: function() {
+      
+        console.log('_mapNodes')
+          Gun.obj.map(gun._.graph,function(g_node){
+                if(g_node._ && g_node._['#'] !== this.gunroot) {
+                 this._processGunNode(g_node)
+                 //console.log(g_node)
+               }
+             }.bind(this));
+          this.async(function(){
+            this._initCy()
+          })
+         
+       
+      },
+      _createLabel: function(node) {
+        var label =''
+        if(this.useAsLabel) {
+           this.useAsLabel.split(',').forEach(function(segment){
+              if(typeof node[segment]=='string') {
+                label+=node[segment] +'\n'
+              }
+            })
+        } else { label = node._['#'] }
+        return label
+      },
+
+  
+      _processGunNode: function(g_node) {
+        var soul = g_node._['#'];
+        var self = this;
+        var gun = this.gun
+        // only process nodes that we want to see
+        // 
+        this._isAset(soul, function(isSet) {
+          if(!isSet) { 
+          console.log('-----------------\nProcess gun node("%s")',g_node._['#'])
+          // create initial cy_node
+          var node = {
+            id:g_node._['#'],
+            raw:g_node,
+            label:self._createLabel(g_node)
+          };
+       
+          var g_field,field,raw;
+          // exemanine each field to determine the g_nodes structure
+          for(g_field in g_node) {
+           
+             if(g_field !=='_' && g_field !== 'tags') { // skip meta and guntagger tags
+               if(typeof g_node[g_field] === 'object') {
+                // we have a reference to something
+                // but is it to a set or to a 'real' node?
+                self._isAset(g_node[g_field]['#'],function(fieldIsSet){
+                  if(fieldIsSet) {
+                    // it's a ref to a set
+                    gun.get(g_node[g_field]['#']).val(function(refs){
+                     delete refs._
+                     for(ref in refs) {
+                       self._pushEdge(soul ,ref,g_field)
+                     }
+                    })
+                  }  else {
+                    // its to a 'real' node
+                    self._pushEdge(node.id,g_node[g_field]['#'],g_field)
+                  };
+                }); // end _isAset(g_node[g_field]['#'])
+               }; // end is 'object'
+             }; // end !== _
+          }; // end for in
+          self._pushNode(node)
+         };// end if(!isSet)
+        }); // end isAset(soul)
+           
+      },
+     
+
+
+      _pushNode: function(node) {
+       
+        var nodeData = {
+          id: node.id,
+          label:node.label || node.id,
+          backgroundColor:'#E0E4E8'
+        }
+
+        if(this.cssLabels) {
+          var labels = this.cssLabels.split(',')
+          for(csslabel in labels) {
+            nodeData[labels[csslabel]] = node.raw[labels[csslabel]]
+          }
+        }
+        if(node.raw[this.useAsCompound]) {
+          nodeData.parent  = node.raw[this.useAsCompound]
+        };
+        this.nodes.push({
+          group: 'nodes',
+          data: nodeData,
+          selectable: true,
+          locked: false, 
+          grabbable: true
+        })
+      },
+      _pushEdge: function(source,target,label) {
+       //console.log('%cinit edge(%s) from %s to %s',"color:brown",label,source,target)
+        this.edges.push({
+          data:{
+            id: source + '+' + target,
+            source:source,
+            target:target,
+            label:label
+          }
+        })
+      },
+  
+      _initUserCy: function(init) {
+        if(init
+          && !this.initialized
+          && this.nodes.length > 0
+          && !this.gunroot) {
+          this.initCy()
+        }
+      },
+
+
+       _initCy: function() {
+        if( !this._initialized        // not initialized yet
+          && this.nodes.length>0       // do we have nodes ?
+
+          ) { 
+          
+          //  console.log('initCy(%s)',this.id)
+          this._initialized = true;
+          this.cy = cytoscape({
+            container: this.$.cy,
+            boxSelectionEnabled: this.boxSelectionEnabled,
+            autounselectify: this.autounselectify,
+            wheelSensitivity:this.zoomStep,
+            zoom: this.zoom,
+            pan: { x: 0, y: 0 },
+            minZoom: this.minZoom,
+            maxZoom: this.maxZoom,
+            layout: this._getLayout(),
+            style:this.cystyle,
+            elements: {
+              nodes:this.nodes,
+              edges:this.edges
+            }
+
+          });
+          cy = this.cy;
+          if(typeof $ == 'function') {
+           this.cy.snapToGrid(); 
+          }
+          if(this.lock) { this.cy.nodes().ungrabify()} 
+
+            this.cy.on('tap', 'node', function(evt){
+              var node = evt.cyTarget;
+              console.log( 'tapped ' + node.id() );
+
+              this.selected= this._buildSelectedData(node)
+             
+              if(this.zoomTap) { 
+                this.goNode(node)
+              }
+            }.bind(this));
+
+        } else {
+          if(this.nodes.length == 0) {console.log('No nodes!!')}
+          if(this.initialized) { console.log('cy already initialized')}
+         
+        }
+      },
+      getIncoming: function(to) {
+        if(cy._private) {
+          var retData = []
+          cy.$('#' +to ).incomers().forEach(function(incomingNode){
+            if(incomingNode.group()=='nodes') {
+                delete incomingNode.data().backgroundColor
+                delete incomingNode.data().label
+               retData.push(incomingNode.data())
+            }
+          })
+          return retData
+        }
+        
+      },
+      getFullPath:function(from) {
+        
+      },
+      goNode: function(node) {
+       if(typeof node == 'string') {
+        node = cy.$('#' + node)
+       }
+        cy.animate({
+                  center: {
+                    eles:node
+                  },
+                  zoom: 1
+                }, {
+                  duration: 1000
+                });
+              
+      },
+      _buildSelectedData: function(node) {
+        var data = {};
+        this.gun.get(node.data().id).val(function(d){
+          delete d.tags;
+          delete d._
+          data = this._normalizeFields(d)
+        }.bind(this))
+       // if(data.parent) {}
+        return data
+      },
+      _normalizeFields:function(obj) {
+        var normData = {}
+        for(var key in obj) {
+          if(typeof obj[key] == 'object') {
+             normData[key] = obj[key]['#']
+           
+          } else {
+            normData[key] = obj[key]
+          }
+        }
+        return normData
+      },
+       _isAset: function(ref,cb){
+         this.gun.get(ref).val(function(node){
+          var set = true;
+          var iterated = false
+          Gun.node.is(node, function(value, field){
+              iterated = true;
+              if(!Gun.val.rel.is(value)){
+                  set = false;
+              }
+          });
+         cb(set && iterated);
+        });
+    },
+       _toArray: function(obj) {
+       // console.log(obj)
+            return Object.keys(obj).map(function(key) {
+                return {
+                    name: key,
+                    value: obj[key]
+                };
+            });
+        },
+      _getPos:function(node) {
+        //console.log(this)
+        //console.log(node.data('id'),this.positions[node.data('id')])
+        return this.positions[node.data('id')]
+      },
+       _getLayout: function() {
+        if(this.layout) {
+          return this.layout
+        } else { 
+          switch(this.useLayout) {
+            case 'cose' : return {
+
+                          };
+                    break;
+            case 'cose-bilkent' : return {
+                                name: 'cose-bilkent',
+                                   // dagre algo options, uses default value on undefined
+                                      ready: undefined, // callback on layoutready
+                                stop: undefined, // callback on layoutstop
+                      
+                                // Whether to fit the network view after when done
+                                fit:  this.fit, // whether to fit to viewport
+                                // Padding on fit
+                                padding: 0,
+                                // Whether to enable incremental mode
+                                randomize: this.randomize,
+                                // Node repulsion (non overlapping) multiplier
+                                nodeRepulsion: 4500,
+                                // Ideal edge (non nested) length
+                                idealEdgeLength: 50,
+                                // Divisor to compute edge forces
+                                edgeElasticity: 0.45,
+                                // Nesting factor (multiplier) to compute ideal edge length for nested edges
+                                nestingFactor: 0.1,
+                                // Gravity force (constant)
+                                gravity: 0.25,
+                                // Maximum number of iterations to perform
+                                numIter: 2500,
+                                // For enabling tiling
+                                tile: this.tile,
+                                // Type of layout animation. The option set is {'during', 'end', false}
+                                animate: 'false',
+                                // Represents the amount of the vertical space to put between the zero degree members during the tiling operation(can also be a function)
+                                tilingPaddingVertical: 10,
+                                // Represents the amount of the horizontal space to put between the zero degree members during the tiling operation(can also be a function)
+                                tilingPaddingHorizontal: 10,
+                                // Gravity range (constant) for compounds
+                                gravityRangeCompound: 1.5,
+                                // Gravity force (constant) for compounds
+                                gravityCompound: 1.0,
+                                // Gravity range (constant)
+                                gravityRange: 3.8
+                              }; 
+                      break;
+            case 'preset' : return {
+                            name: 'preset',
+                            positions: function(node) {
+                              return this.positions[node.data('id')]
+                            }.bind(this),
+                            //this.positions, // map of (node id) => (position obj); or function(node){ return somPos; }
+                            zoom: this.zoom, // the zoom level to set (prob want fit = false if set)
+                            pan: this.pan, // the pan level to set (prob want fit = false if set)
+                            fit: this.fit, // whether to fit to viewport
+                            padding: 30, // padding on fit
+                            animate: false, // whether to transition the node positions
+                            animationDuration: 500, // duration of animation in ms if enabled
+                            animationEasing: undefined, // easing of animation if enabled
+                            ready: undefined, // callback on layoutready
+                            stop: undefined // callback on layoutstop
+                          };
+                        break;
+           case 'dagre' : return {
+                          name: 'dagre',
+                           // dagre algo options, uses default value on undefined
+                            nodeSep: undefined, // the separation between adjacent nodes in the same rank
+                            edgeSep: undefined, // the separation between adjacent edges in the same rank
+                            rankSep: undefined, // the separation between adjacent nodes in the same rank
+                            rankDir: undefined, // 'TB' for top to bottom flow, 'LR' for left to right
+                            minLen: function( edge ){ return 1; }, // number of ranks to keep between the source and target of the edge
+                            edgeWeight: function( edge ){ return 1; }, // higher weight edges are generally made shorter and straighter than lower weight edges
+
+                            // general layout options
+                            fit: this.fit, // whether to fit to viewport
+                            padding: 30, // fit padding
+                            animate: false, // whether to transition the node positions
+                            animationDuration: 500, // duration of animation in ms if enabled
+                            animationEasing: undefined, // easing of animation if enabled
+                            boundingBox: undefined, // constrain layout bounds; { x1, y1, x2, y2 } or { x1, y1, w, h }
+                            ready: function(){}, // on layoutready
+                            stop: function(){} // on layoutstop
+                        }
+          
+
+          }; // end switch
+        }
+                  
+        
+        
+      },
+
+    });
+  </script>
+</dom-module>

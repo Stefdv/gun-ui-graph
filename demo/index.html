@@ -1,0 +1,184 @@
+<!doctype html>
+<html>
+  <head>
+    <title>gun-ui-graph demo</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1, user-scalable=yes">
+    <script src="../../webcomponentsjs/webcomponents-lite.js"></script>
+    <script src="gun.js"></script>
+    <link rel="import" href="../../iron-demo-helpers/demo-pages-shared-styles.html">
+    <link rel="import" href="../../iron-demo-helpers/demo-snippet.html">
+
+    <link rel="import" href="../gun-ui-graph.html">
+
+    <style is="custom-style" include="demo-pages-shared-styles">
+    body,html {
+    	width:100%;
+    	height:100%;
+    }
+    .centered {
+    	width:100%;
+    	max-width:80% !important;
+    }
+    gun-ui-graph {
+    	width:100%;
+    	height:400px;
+    	max-height:100%;
+    }
+
+    </style>
+<script>
+
+</script>
+  </head>
+  <body>
+  
+    <div class="vertical-section-container centered">
+      <demo-snippet>
+      <template is="dom-bind" id="t">
+     
+      	<gun-ui-graph 
+      	   layout="[[layout]]"
+		  		 gunroot="ROOT"
+		  		 gun="{{gun}}"
+		  		 fit
+		  		 randomize
+		  		 cystyle="{{cystyle}}"
+		  	>
+		  	</gun-ui-graph>
+		  	
+      </template>
+    </demo-snippet>
+      <script>
+		  	//localStorage.clear();
+		    var gun = Gun();
+		   // localStorage.clear()
+		    var template = document.getElementById('t');
+		    template.layout = {
+		    	name: 'cose-bilkent',
+          // dagre algo options, uses default value on undefined
+          ready: undefined, // callback on layoutready
+          stop: undefined, // callback on layoutstop        
+          // Whether to fit the network view after when done
+          fit:  true, // whether to fit to viewport
+         // pan:{x:0,y:0},
+          padding: 0,// Padding on fit
+          randomize: true,// Whether to enable incremental mode
+          nodeRepulsion: 4500, // Node repulsion (non overlapping) multiplier
+          idealEdgeLength: 50, // Ideal edge (non nested) length
+          edgeElasticity: 0.45,// Divisor to compute edge forces
+          nestingFactor: 0.1,// Nesting factor (multiplier) to compute ideal edge length for nested edges
+          gravity: 0.25, // Gravity force (constant)
+          numIter: 2500,// Maximum number of iterations to perform
+          tile: this.tile,// For enabling tiling
+          animate: 'false',    // Type of layout animation. The option set is {'during', 'end', false}
+           // Represents the amount of the vertical space to put between the zero degree members during the tiling operation(can also be a function)
+          tilingPaddingVertical: 10,
+          // Represents the amount of the horizontal space to put between the zero degree members during the tiling operation(can also be a function)
+         tilingPaddingHorizontal: 10,
+         gravityRangeCompound: 1.5,// Gravity range (constant) for compounds
+         gravityCompound: 1.0,// Gravity force (constant) for compounds
+        gravityRange: 3.8// Gravity range (constant)
+		    }
+		   	template.cystyle = [
+					{ selector:'node',
+						style:{
+						'height': 'label',        
+             'width': 'label',
+						 'text-halign': 'center',  
+             'text-valign': 'center',
+             'text-wrap': 'wrap',      
+             'text-max-width': 200,
+             'padding-top': 5,         
+             'padding-right': 5,
+             'padding-bottom': 5,      
+             'padding-left': 5,
+             'shape': 'roundrectangle',
+             'label': 'data(label)',
+             'font-weight': '600', 
+             "font-size": '14px' ,   
+             'font-family': 'sans-serif',
+             "border-width":"1px",
+						 "border-color":"black",
+					 }
+				  },
+				   { selector: 'edge', 
+				   	style: {
+				   			'width': 2,
+                'text-wrap': 'wrap',
+                'target-arrow-shape': 'triangle',
+                'target-arrow-color': 'blue',
+                'edge-text-rotation': 'autorotate',
+                'line-color': 'lightGrey',
+                "font-size":"12px",
+                'font-weight': '300',
+                'label': 'data(label)',
+                'curve-style': 'unbundled-bezier',
+          			'control-point-distance': '10%',
+          			'control-point-weight': '0.7'
+             }
+           }
+		    ]
+
+	/**
+	* Gun does not have an option to read the whole database at once
+	* so we have to set everything ( we want to see in the graph) 
+	* under a 'root'. ( You can name it how you want)
+	*/
+var g_ROOT = gun.get('ROOT');
+var Mark = gun.get('Mark');
+g_ROOT.set(Mark);
+var Stef = gun.get('Stef');
+g_ROOT.set(Stef);
+var Jesse = gun.get('Jesse');
+g_ROOT.set(Jesse);
+var usa = gun.get('usa');
+g_ROOT.set(usa);
+var nl = gun.get('nl');
+g_ROOT.set(nl);
+var g_gun = gun.get('Gun');
+g_ROOT.set(g_gun);
+function setData() { 
+		   console.log('setting data')
+
+		    Mark.put({name:'Mark',gitter:'amark'});
+		    Mark.path('knows').set(Jesse);
+		    Mark.path('lives in').set(usa);
+
+		    Jesse.put({name:'Jesse',gitter:'Psycholama'});
+		    Jesse.path('knows').set(Mark);
+		    Jesse.path('lives in').set(usa);
+
+		    Stef.put({name:'Stef',gitter:'Stefdv'});
+		    Stef.path('chats with').set(Mark);
+		    Stef.path('chats with').set(Jesse);
+		    Stef.path('lives in').set(nl);
+		    Stef.path('been to').set(usa);
+
+		    // add some countries
+		    usa.put({ name :"United States of America",short:"usa" });
+		    usa.path('inhabitant').set(Jesse);
+		   	usa.path('inhabitant').set(Mark);
+
+		    nl.put({ name : "The Netherlands",short:"nl" });
+		    nl.path('inhabitant').set(Stef);
+		    
+		   gun.get('ROOT').val(function(data){console.log(data)})
+
+		  
+}
+   setData()
+	template.gun = gun;
+
+
+
+
+		  
+				
+
+
+		  </script>
+    </div>
+
+  </body>
+</html>
